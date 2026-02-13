@@ -77,8 +77,8 @@ function fetchData(channelID){
  .then(data => {
    const latest = data.feeds[0];
    if(!latest) return;
-   const lat = parseFloat(latest.latitude);
-   const lon = parseFloat(latest.longitude);
+   const lat = parseFloat(latest.field7);
+   const lon = parseFloat(latest.field8);
    const pm1  = parseFloat(latest.field1);
    const pm25 = parseFloat(latest.field2);
    const pm10 = parseFloat(latest.field3);
