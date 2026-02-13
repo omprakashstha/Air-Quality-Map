@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Professional Air Quality Platform</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+   body { margin:0; font-family: Arial; background:#f4f6f9;}
+   #map { height:50vh; }
+   .header {
+     background:#1e293b;
+     color:white;
+     padding:12px;
+     text-align:center;
+     font-size:20px;
+   }
+   .charts {
+     display:flex;
+     flex-wrap:wrap;
+     padding:10px;
+     gap:20px;
+   }
+   .chartBox {
+     flex:1 1 400px;
+     background:white;
+     padding:10px;
+     border-radius:8px;
+     box-shadow:0 2px 6px rgba(0,0,0,0.1);
+   }
+   canvas {
+     height:300px !important;
+   }
+</style>
+</head>
+<body>
+<div class="header">
+ 🌍 Smart Multi-City Air Quality Monitoring Platform
+</div>
+<div id="map"></div>
+<div class="charts" id="chartsContainer"></div>
+<script>
+const channels = [
+ "CHANNEL_ID_1",
+ "CHANNEL_ID_2"
+];
+var map = L.map('map').setView([0,0],2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+ attribution:'© OpenStreetMap'
+}).addTo(map);
+let markers = {};
+let charts = {};
+let bounds = [];
+// AQI calculation using PM2.5
+function calculateAQI(pm) {
+ if(pm <= 12) return {aqi: pm*4.16, level:"Good", color:"#2ecc71"};
+ if(pm <= 35.4) return {aqi: 50 + (pm-12)*2.1, level:"Moderate", color:"#f1c40f"};
+ if(pm <= 55.4) return {aqi: 100 + (pm-35.4)*2.46, level:"Unhealthy (Sensitive)", color:"#e67e22"};
+ if(pm <= 150.4) return {aqi: 150 + (pm-55.4)*0.52, level:"Unhealthy", color:"#e74c3c"};
+ return {aqi: 300, level:"Hazardous", color:"#8e44ad"};
+}
+function getStatus(lastUpdate){
+   const now = new Date();
+   const updateTime = new Date(lastUpdate);
+   const diffMinutes = (now - updateTime) / 60000;
+   return diffMinutes <= 2
+       ? {text:"ONLINE", color:"green"}
+       : {text:"OFFLINE", color:"red"};
+}
+function fetchData(channelID){
+ fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=1`)
+ .then(res => res.json())
+ .then(data => {
+   const latest = data.feeds[0];
+   if(!latest) return;
+   const lat = parseFloat(latest.latitude);
+   const lon = parseFloat(latest.longitude);
+   const pm1  = parseFloat(latest.field1);
+   const pm25 = parseFloat(latest.field2);
+   const pm10 = parseFloat(latest.field3);
+   const lastUpdate = latest.created_at;
+   const aqiData = calculateAQI(pm25);
+   const status = getStatus(lastUpdate);
+   // Create marker if not exists
+   if(!markers[channelID]){
+       markers[channelID] = L.circleMarker([lat, lon], {
+         radius:15,
+         fillColor:aqiData.color,
+         color:"#000",
+         weight:1,
+         fillOpacity:0.9
+       }).addTo(map);
+       bounds.push([lat, lon]);
+       map.fitBounds(bounds, {padding:[50,50]});
+   } else {
+       markers[channelID].setLatLng([lat, lon]);
+       markers[channelID].setStyle({fillColor:aqiData.color});
+   }
+   markers[channelID].bindPopup(`
+<b>Channel:</b> ${channelID}<br>
+<b>Status:</b>
+<span style="color:${status.color}; font-weight:bold;">
+     ${status.text}
+</span><br>
+<b>PM1:</b> ${pm1} µg/m³<br>
+<b>PM2.5:</b> ${pm25} µg/m³<br>
+<b>PM10:</b> ${pm10} µg/m³<br>
+<b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})
+   `);
+ });
+}
+// Initial load
+channels.forEach(id => fetchData(id));
+// Real-time polling every 15 sec
+setInterval(() => {
+ channels.forEach(id => fetchData(id));
+}, 15000);
+</script>
+</body>
+</html>
