@@ -104,7 +104,12 @@ function fetchData(sensor){
             weight:1,
             fillOpacity:0.9
          }).addTo(map);
-
+markers[channelID].bindTooltip(sensorName, {
+   permanent: true,
+   direction: "top",
+   offset: [0, -10],
+   className: "sensor-label"
+});
          bounds.push([lat, lon]);
          map.fitBounds(bounds, {padding:[50,50]});
       } else {
