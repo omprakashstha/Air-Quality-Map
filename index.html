@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Professional Air Quality Platform</title>
+<title>Nova Scotia Air Quality Monitoring System</title>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- Leaflet -->
@@ -19,13 +19,38 @@
   .popup-flex { display: flex; gap: 20px; padding: 15px; }
   .popup-details { flex: 1 1 160px; font-size: 14px; line-height: 1.4; font-weight: 600; }
   .popup-details b { display:block; margin-top:8px; }
-  .popup-chart { flex: 2 1 340px; background: white; padding: 10px; border-radius: 6px; }
+.popup-container {
+  width: 100%;
+  padding-top: 10px;  /* space above title */
+}
+
+.popup-title {
+  text-align: center;  
+  font-weight: bold;
+  font-size: 25px;
+  margin-bottom: 5px; 
+  display: block;
+  width: 100%;
+  padding-left: 90px;
+  padding-top: 10px;
+  padding-bottom: 0px;
+}
+
+.popup-details {
+  flex: 1 1 200px;       /* increase left section width */
+  font-size: 14px; 
+  line-height: 1.4; 
+  font-weight: 400;
+  padding-left: 10px;    /* small extra left padding if needed */
+}
+
+  .popup-chart { flex: 2 1 400px; background: white; padding: 10px; border-radius: 6px; }
   select { width: 100%; margin-bottom: 10px; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; }
 </style>
 </head>
 <body>
 <div class="header">
- 🌍 Smart Multi-City Air Quality Monitoring Platform
+ 🌍 Sydney Air Quality Monitoring Platform
 </div>
 <div id="map"></div>
 
@@ -94,28 +119,29 @@ function fetchData(sensor){
 
 function getPopupHTML(channelID, name, id, status, pm1, pm25, pm10, aqiData){
   return `
-    <div class="popup-flex">
-      <div class="popup-details">
-        <b>${name}</b>
-        <b>Channel:</b> ${id}
-        <b>Status:</b> <span style="color:${status.color}; font-weight:bold;">${status.text}</span>
-        <b>PM1:</b> ${isNaN(pm1)?'N/A':pm1} µg/m³
-        <b>PM2.5:</b> ${isNaN(pm25)?'N/A':pm25} µg/m³
-        <b>PM10:</b> ${isNaN(pm10)?'N/A':pm10} µg/m³
-        <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})
-      </div>
-      <div class="popup-chart">
-        <select id="time-range-${channelID}">
-          <option value="1">1 Hour</option>
-          <option value="24">24 Hours</option>
-          <option value="168">7 Days</option>
-        </select>
-        <canvas id="chart-${channelID}" height="280"></canvas>
+    <div class="popup-container">
+      <div class="popup-title">${name}</div>
+      <div class="popup-flex">
+        <div class="popup-details">
+          <b>Channel:</b> ${id}
+          <b>Status:</b> <span style="color:${status.color}; font-weight:bold;">${status.text}</span>
+          <b>PM1:</b> ${isNaN(pm1)?'N/A':pm1} µg/m³
+          <b>PM2.5:</b> ${isNaN(pm25)?'N/A':pm25} µg/m³
+          <b>PM10:</b> ${isNaN(pm10)?'N/A':pm10} µg/m³
+          <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})
+        </div>
+        <div class="popup-chart">
+          <select id="time-range-${channelID}">
+            <option value="1">1 Hour</option>
+            <option value="24">24 Hours</option>
+            <option value="168">7 Days</option>
+          </select>
+          <canvas id="chart-${channelID}" height="350"></canvas>
+        </div>
       </div>
     </div>
   `;
 }
-
 function setupChart(channelID){
   const selectEl = document.getElementById(`time-range-${channelID}`);
   loadChart(channelID, selectEl.value);
@@ -125,7 +151,7 @@ function setupChart(channelID){
 }
 
 function loadChart(channelID, hours){
-  const results = Math.min(hours*4, 1000);
+  const results = Math.min(hours*12, 1000);
   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
     .then(res => res.json())
     .then(history => {
