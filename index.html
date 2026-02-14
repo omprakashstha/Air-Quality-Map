@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Nova Scotia Air Quality Monitoring System</title>
+<title>Nova Scotia Air Quality Platform</title>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- Leaflet -->
@@ -10,17 +10,54 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  body { margin:0; font-family: Arial; background:#1e1e2f; color:white; }
+  body { margin:0; font-family: Arial, sans-serif; background:#1e1e2f; color:white; }
   #map { height:100vh; }
-  .header { background:#111; color:white; padding:12px; text-align:center; font-size:20px; position:fixed; width:100%; z-index:1000; }
+  .header { background:#111; color:white; padding:12px; text-align:center; font-size:20px; }
   .sensor-label {
-    background: white; border: 1px solid #333; padding: 2px 6px; font-size: 12px; border-radius: 4px; color:black;
+    background: white;
+    border: 1px solid #333;
+    padding: 2px 6px;
+    font-size: 12px;
+    border-radius: 4px;
+    color:black;
   }
-  select { background:#333; color:white; border:none; padding:5px; border-radius:4px; width:100%; margin-bottom:5px; }
+  /* Popup content flex layout */
+  .popup-container {
+    display: flex;
+    gap: 15px;
+    width: 600px;
+  }
+  .popup-details {
+    flex: 1 1 200px;
+    color: black;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .popup-details b {
+    display: block;
+    margin-top: 8px;
+  }
+  .popup-chart {
+    flex: 1 1 380px;
+  }
+  .popup-chart select {
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 6px;
+    font-size: 14px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+  }
+  canvas {
+    width: 100% !important;
+    height: 300px !important;
+  }
 </style>
 </head>
 <body>
-<div class="header">🌍 Smart Sydney Air Quality Monitoring Platform</div>
+<div class="header">
+ 🌍 Smart Sydney Air Quality Monitoring Platform
+</div>
 <div id="map"></div>
 
 <script>
@@ -29,7 +66,7 @@ const channels = [
   { id: "CHANNEL_ID_2", name: "Pokhara AQ Station" }
 ];
 
-const map = L.map('map').setView([0,0],2);
+var map = L.map('map').setView([0,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
  attribution:'© OpenStreetMap'
 }).addTo(map);
@@ -37,7 +74,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 let markers = {};
 let bounds = [];
 
-// AQI from PM2.5
+// AQI calculation from PM2.5
 function calculateAQI(pm) {
   if(pm <= 12) return {aqi: pm*4.16, level:"Good", color:"#2ecc71"};
   if(pm <= 35.4) return {aqi: 50 + (pm-12)*2.1, level:"Moderate", color:"#f1c40f"};
@@ -46,10 +83,12 @@ function calculateAQI(pm) {
   return {aqi: 300, level:"Hazardous", color:"#8e44ad"};
 }
 
-// Online/offline
+// Determine online/offline status
 function getStatus(lastUpdate){
-  const diff = (new Date() - new Date(lastUpdate))/60000;
-  return diff <= 2 ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"};
+  const now = new Date();
+  const updateTime = new Date(lastUpdate);
+  const diffMinutes = (now - updateTime) / 60000;
+  return diffMinutes <= 2 ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"};
 }
 
 // Fetch latest sensor data
@@ -62,11 +101,14 @@ function fetchData(sensor){
     .then(data => {
       const latest = data.feeds[0];
       if(!latest) return;
+
       const lat = parseFloat(latest.field7);
       const lon = parseFloat(latest.field8);
       if(isNaN(lat) || isNaN(lon)) return;
 
+      const pm1  = parseFloat(latest.field1);
       const pm25 = parseFloat(latest.field2);
+      const pm10 = parseFloat(latest.field3);
       const lastUpdate = latest.created_at;
       const aqiData = calculateAQI(pm25);
       const status = getStatus(lastUpdate);
@@ -76,7 +118,10 @@ function fetchData(sensor){
           radius:15, fillColor:aqiData.color, color:"#000", weight:1, fillOpacity:0.9
         }).addTo(map);
 
-        markers[channelID].bindTooltip(sensorName, {permanent:true, direction:"top", offset:[0,-10], className:"sensor-label"});
+        markers[channelID].bindTooltip(sensorName, {
+          permanent: true, direction: "top", offset: [0, -10], className: "sensor-label"
+        });
+
         bounds.push([lat, lon]);
         map.fitBounds(bounds, {padding:[50,50]});
       } else {
@@ -84,78 +129,113 @@ function fetchData(sensor){
         markers[channelID].setStyle({fillColor:aqiData.color});
       }
 
-      // Popup with big AQI-only graph
+      // Bind popup with flex layout: left details, right chart
       markers[channelID].bindPopup(`
-        <div style="width:500px;">
-          <b>${sensorName}</b><br>
-          <b>Channel:</b> ${channelID}<br>
-          <b>Status:</b> <span style="color:${status.color}">${status.text}</span><br>
-          <b>PM2.5:</b> ${pm25} µg/m³<br>
-          <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})<br><br>
-          <select id="time-range-${channelID}">
-            <option value="1">1 Hour</option>
-            <option value="24">24 Hours</option>
-            <option value="168">7 Days</option>
-          </select>
-          <canvas id="chart-${channelID}" width="480" height="300"></canvas>
+        <div class="popup-container">
+          <div class="popup-details">
+            <b>${sensorName}</b>
+            <b>Channel:</b> ${channelID}
+            <b>Status:</b> <span style="color:${status.color}; font-weight:bold;">${status.text}</span>
+            <b>PM1:</b> ${pm1} µg/m³
+            <b>PM2.5:</b> ${pm25} µg/m³
+            <b>PM10:</b> ${pm10} µg/m³
+            <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})
+          </div>
+          <div class="popup-chart">
+            <select id="time-range-${channelID}">
+              <option value="1">1 Hour</option>
+              <option value="24">24 Hours</option>
+              <option value="168">7 Days</option>
+            </select>
+            <canvas id="chart-${channelID}" height="300"></canvas>
+          </div>
         </div>
       `);
 
-      markers[channelID].on('popupopen', ()=>{
-        loadAQIChart(channelID, document.getElementById(`time-range-${channelID}`).value);
-        document.getElementById(`time-range-${channelID}`).addEventListener('change', e=>{
-          loadAQIChart(channelID, e.target.value);
+      markers[channelID].on('popupopen', () => {
+        loadChart(channelID, document.getElementById(`time-range-${channelID}`).value);
+        document.getElementById(`time-range-${channelID}`).addEventListener('change', (e) => {
+          loadChart(channelID, e.target.value);
         });
       });
     });
 }
 
-// Load AQI-only chart
-function loadAQIChart(channelID, hours){
-  const results = Math.min(hours*4, 1000);
+// Load Chart.js graph
+function loadChart(channelID, hours){
+  const results = Math.min(hours*4, 1000); // approx 15-min intervals
   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
     .then(res => res.json())
-    .then(history=>{
-      const labels = history.feeds.map(f=>new Date(f.created_at).toLocaleTimeString());
-      const aqiData = history.feeds.map(f=>calculateAQI(parseFloat(f.field2)||0).aqi);
+    .then(history => {
+      const labels = history.feeds.map(f => new Date(f.created_at).toLocaleString());
+      const pm1Data  = history.feeds.map(f => parseFloat(f.field1) || 0);
+      const pm25Data = history.feeds.map(f => parseFloat(f.field2) || 0);
+      const pm10Data = history.feeds.map(f => parseFloat(f.field3) || 0);
+      const aqiData  = history.feeds.map(f => calculateAQI(parseFloat(f.field2)||0).aqi);
 
       const ctx = document.getElementById(`chart-${channelID}`).getContext('2d');
       if(window[`chart_${channelID}`]) window[`chart_${channelID}`].destroy();
 
       window[`chart_${channelID}`] = new Chart(ctx, {
-        type:'line',
-        data:{
-          labels:labels,
-          datasets:[{
-            label:'AQI',
-            data:aqiData,
-            borderColor:'#8e44ad',
-            backgroundColor:'rgba(142,68,173,0.2)',
-            fill:true,
-            tension:0.3,
-            pointRadius:4,
-            pointBackgroundColor:'#fff',
-            pointBorderColor:'#8e44ad'
-          }]
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets:[
+            { label:'PM1', data: pm1Data, borderColor:'#3498db', backgroundColor:'rgba(52,152,219,0.2)', tension:0.4, fill:true },
+            { label:'PM2.5', data: pm25Data, borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,0.2)', tension:0.4, fill:true },
+            { label:'PM10', data: pm10Data, borderColor:'#f1c40f', backgroundColor:'rgba(241,196,15,0.2)', tension:0.4, fill:true },
+            { label:'AQI', data: aqiData, borderColor:'#8e44ad', backgroundColor:'rgba(142,68,173,0.2)', tension:0.4, fill:false, yAxisID:'y1' }
+          ]
         },
-        options:{
-          responsive:false,
-          plugins:{
-            legend:{ labels:{color:'white'} },
-            tooltip:{mode:'index', intersect:false}
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          stacked: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#000',
+                boxWidth: 20,
+                padding: 15
+              }
+            },
+            tooltip: {
+              enabled: true,
+              mode: 'nearest'
+            }
           },
-          scales:{
-            x:{ title:{display:true,text:'Time', color:'white'}, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} },
-            y:{ title:{display:true,text:'AQI', color:'white'}, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} }
+          scales: {
+            x: {
+              ticks: { color: '#000' },
+              grid: { color: 'rgba(0,0,0,0.1)' },
+              title: { display: true, text: 'Time', color: '#000', font: { size: 14 } }
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              beginAtZero: true,
+              ticks: { color: '#000' },
+              grid: { color: 'rgba(0,0,0,0.1)' },
+              title: { display: true, text: 'PM Values (µg/m³)', color: '#000', font: { size: 14 } }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              beginAtZero: true,
+              ticks: { color: '#000' },
+              grid: { drawOnChartArea: false },
+              title: { display: true, text: 'AQI', color: '#000', font: { size: 14 } }
+            }
           }
         }
       });
+
     });
 }
 
 // Initial load
-channels.forEach(sensor=>fetchData(sensor));
-setInterval(()=>channels.forEach(sensor=>fetchData(sensor)),15000);
+channels.forEach(sensor => fetchData(sensor));
+setInterval(() => channels.forEach(sensor => fetchData(sensor)), 15000);
 </script>
 </body>
 </html>
