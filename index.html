@@ -71,49 +71,60 @@ function getStatus(lastUpdate){
        ? {text:"ONLINE", color:"green"}
        : {text:"OFFLINE", color:"red"};
 }
-function fetchData(channelID){
-	const channelID = sensor.id;
-        const sensorName = sensor.name;
- fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=1`)
- .then(res => res.json())
- .then(data => {
-   const latest = data.feeds[0];
-   if(!latest) return;
-   const lat = parseFloat(latest.field7);
-   const lon = parseFloat(latest.field8);
-   const pm1  = parseFloat(latest.field1);
-   const pm25 = parseFloat(latest.field2);
-   const pm10 = parseFloat(latest.field3);
-   const lastUpdate = latest.created_at;
-   const aqiData = calculateAQI(pm25);
-   const status = getStatus(lastUpdate);
-   // Create marker if not exists
-   if(!markers[channelID]){
-       markers[channelID] = L.circleMarker([lat, lon], {
-         radius:15,
-         fillColor:aqiData.color,
-         color:"#000",
-         weight:1,
-         fillOpacity:0.9
-       }).addTo(map);
-       bounds.push([lat, lon]);
-       map.fitBounds(bounds, {padding:[50,50]});
-   } else {
-       markers[channelID].setLatLng([lat, lon]);
-       markers[channelID].setStyle({fillColor:aqiData.color});
-   }
-   markers[channelID].bindPopup(`
-<b>Channel:</b> ${channelID}<br>
+function fetchData(sensor){
+
+   const channelID = sensor.id;
+   const sensorName = sensor.name;
+
+   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=1`)
+   .then(res => res.json())
+   .then(data => {
+
+      const latest = data.feeds[0];
+      if(!latest) return;
+
+      const lat = parseFloat(latest.field7);
+      const lon = parseFloat(latest.field8);
+
+      if(isNaN(lat) || isNaN(lon)) return;
+
+      const pm1  = parseFloat(latest.field1);
+      const pm25 = parseFloat(latest.field2);
+      const pm10 = parseFloat(latest.field3);
+      const lastUpdate = latest.created_at;
+
+      const aqiData = calculateAQI(pm25);
+      const status = getStatus(lastUpdate);
+
+      if(!markers[channelID]){
+         markers[channelID] = L.circleMarker([lat, lon], {
+            radius:15,
+            fillColor:aqiData.color,
+            color:"#000",
+            weight:1,
+            fillOpacity:0.9
+         }).addTo(map);
+
+         bounds.push([lat, lon]);
+         map.fitBounds(bounds, {padding:[50,50]});
+      } else {
+         markers[channelID].setLatLng([lat, lon]);
+         markers[channelID].setStyle({fillColor:aqiData.color});
+      }
+
+      markers[channelID].bindPopup(`
+<b>Sensor:</b> ${sensorName}<br>
+<b>Channel ID:</b> ${channelID}<br>
 <b>Status:</b>
 <span style="color:${status.color}; font-weight:bold;">
-     ${status.text}
+${status.text}
 </span><br>
 <b>PM1:</b> ${pm1} µg/m³<br>
 <b>PM2.5:</b> ${pm25} µg/m³<br>
 <b>PM10:</b> ${pm10} µg/m³<br>
 <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})
-   `);
- });
+      `);
+   });
 }
 // Initial load
 channels.forEach(sensor => fetchData(sensor));
