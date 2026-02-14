@@ -52,7 +52,7 @@ function calculateAQI(pm) {
 function getStatus(lastUpdate){
   const now = new Date();
   const updateTime = new Date(lastUpdate);
-  return ((now - updateTime)/60000 <=2) ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"};
+  return ((now - updateTime)/60000 <=10) ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"};
 }
 
 function fetchData(sensor){
@@ -142,11 +142,50 @@ function loadChart(channelID, hours){
       window[`chart_${channelID}`] = new Chart(ctx, {
         type: 'line',
         data: { labels, datasets:[
-          { label:'PM1', data:pm1Data, borderColor:'#3498db', backgroundColor:'#3498db', tension:0.3, fill:true, hidden:true },
-          { label:'PM2.5', data:pm25Data, borderColor:'#e74c3c', backgroundColor:'#e74c3c', tension:0.3, fill:true, hidden:true },
-          { label:'PM10', data:pm10Data, borderColor:'#f1c40f', backgroundColor:'#f1c40f', tension:0.3, fill:true, hidden:true },
-          { label:'AQI', data:aqiData, borderColor:'#8e44ad', backgroundColor:'transparent', tension:0.3, fill:false, yAxisID:'y1' }
-        ]},
+          {
+    label:'PM1',
+    data: pm1Data,
+    borderColor:'#3498db',
+    backgroundColor:'transparent',
+    fill:false,
+    tension:0.3,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    hidden: true
+  },
+  {
+    label:'PM2.5',
+    data: pm25Data,
+    borderColor:'#e74c3c',
+    backgroundColor:'transparent',
+    fill:false,
+    tension:0.3,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    hidden: true
+  },
+  {
+    label:'PM10',
+    data: pm10Data,
+    borderColor:'#f1c40f',
+    backgroundColor:'transparent',
+    fill:false,
+    tension:0.3,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    hidden: true
+  },
+  {
+    label:'AQI',
+    data: aqiData,
+    borderColor:'#8e44ad',
+    backgroundColor:'transparent',
+    fill:false,
+    yAxisID:'y1',
+    pointRadius: 4,
+    pointHoverRadius: 6
+  }
+]},
         options: {
           responsive:true,
           interaction:{mode:'index',intersect:false},
