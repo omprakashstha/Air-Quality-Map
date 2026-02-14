@@ -10,18 +10,35 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body { margin:0; font-family: Arial; background:#f4f6f9;}
-#map { height:100vh; }
-.header { background:#1e293b; color:white; padding:12px; text-align:center; font-size:20px;}
-.sensor-label { background: white; border: 1px solid #333; padding: 2px 6px; font-size: 12px; border-radius: 4px;}
-canvas { height:200px !important; background:#1e293b; border-radius:6px;}
+  body { margin:0; font-family: Arial; background:#1e1e2f; color:white; }
+  #map { height:60vh; }
+  .header { background:#111; color:white; padding:12px; text-align:center; font-size:20px; }
+  .sensor-label {
+    background: white;
+    border: 1px solid #333;
+    padding: 2px 6px;
+    font-size: 12px;
+    border-radius: 4px;
+    color:black;
+  }
+  .charts { display:flex; flex-wrap:wrap; padding:10px; gap:20px; background:#1e1e2f; }
+  .chartBox {
+    flex:1 1 400px;
+    background:#2c2c3c;
+    padding:10px;
+    border-radius:8px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.5);
+  }
+  canvas { height:300px !important; }
+  select { background:#333; color:white; border:none; padding:5px; border-radius:4px; }
 </style>
 </head>
 <body>
 <div class="header">
- 🌍 Smart Nova Scotia Air Quality Monitoring System
+ 🌍 Smart Multi-City Air Quality Monitoring Platform
 </div>
 <div id="map"></div>
+<div class="charts" id="chartsContainer"></div>
 
 <script>
 const channels = [
@@ -30,35 +47,41 @@ const channels = [
 ];
 
 var map = L.map('map').setView([0,0],2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+ attribution:'© OpenStreetMap'
+}).addTo(map);
 
 let markers = {};
 let bounds = [];
 
+// AQI calculation from PM2.5
 function calculateAQI(pm) {
- if(pm <= 12) return {aqi: pm*4.16, level:"Good", color:"#2ecc71"};
- if(pm <= 35.4) return {aqi: 50 + (pm-12)*2.1, level:"Moderate", color:"#f1c40f"};
- if(pm <= 55.4) return {aqi: 100 + (pm-35.4)*2.46, level:"Unhealthy (Sensitive)", color:"#e67e22"};
- if(pm <= 150.4) return {aqi: 150 + (pm-55.4)*0.52, level:"Unhealthy", color:"#e74c3c"};
- return {aqi: 300, level:"Hazardous", color:"#8e44ad"};
+  if(pm <= 12) return {aqi: pm*4.16, level:"Good", color:"#2ecc71"};
+  if(pm <= 35.4) return {aqi: 50 + (pm-12)*2.1, level:"Moderate", color:"#f1c40f"};
+  if(pm <= 55.4) return {aqi: 100 + (pm-35.4)*2.46, level:"Unhealthy (Sensitive)", color:"#e67e22"};
+  if(pm <= 150.4) return {aqi: 150 + (pm-55.4)*0.52, level:"Unhealthy", color:"#e74c3c"};
+  return {aqi: 300, level:"Hazardous", color:"#8e44ad"};
 }
 
+// Determine online/offline status
 function getStatus(lastUpdate){
-   const now = new Date();
-   const updateTime = new Date(lastUpdate);
-   const diffMinutes = (now - updateTime) / 60000;
-   return diffMinutes <= 2 ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"};
+  const now = new Date();
+  const updateTime = new Date(lastUpdate);
+  const diffMinutes = (now - updateTime) / 60000;
+  return diffMinutes <= 2 ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"};
 }
 
+// Fetch latest sensor data
 function fetchData(sensor){
-   const channelID = sensor.id;
-   const sensorName = sensor.name;
+  const channelID = sensor.id;
+  const sensorName = sensor.name;
 
-   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=1`)
-   .then(res => res.json())
-   .then(data => {
+  fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=1`)
+    .then(res => res.json())
+    .then(data => {
       const latest = data.feeds[0];
       if(!latest) return;
+
       const lat = parseFloat(latest.field7);
       const lon = parseFloat(latest.field8);
       if(isNaN(lat) || isNaN(lon)) return;
@@ -68,75 +91,98 @@ function fetchData(sensor){
       const pm10 = parseFloat(latest.field3);
       const lastUpdate = latest.created_at;
       const aqiData = calculateAQI(pm25);
+      const status = getStatus(lastUpdate);
 
       if(!markers[channelID]){
-         markers[channelID] = L.circleMarker([lat, lon], {
-            radius:15, fillColor:aqiData.color, color:"#000", weight:1, fillOpacity:0.9
-         }).addTo(map);
-         markers[channelID].bindTooltip(sensorName, { permanent:true, direction:"top", offset:[0,-10], className:"sensor-label" });
-         bounds.push([lat, lon]);
-         map.fitBounds(bounds, {padding:[50,50]});
+        markers[channelID] = L.circleMarker([lat, lon], {
+          radius:15, fillColor:aqiData.color, color:"#000", weight:1, fillOpacity:0.9
+        }).addTo(map);
+
+        markers[channelID].bindTooltip(sensorName, {
+          permanent: true, direction: "top", offset: [0, -10], className: "sensor-label"
+        });
+
+        bounds.push([lat, lon]);
+        map.fitBounds(bounds, {padding:[50,50]});
       } else {
-         markers[channelID].setLatLng([lat, lon]);
-         markers[channelID].setStyle({fillColor:aqiData.color});
+        markers[channelID].setLatLng([lat, lon]);
+        markers[channelID].setStyle({fillColor:aqiData.color});
       }
 
-      markers[channelID].on('click', () => openGraphPopup(channelID, sensorName));
-   });
-}
-
-function openGraphPopup(channelID, sensorName){
-   const popupContent = `
-      <div style="width:350px;">
+      // Bind popup with full values and graph
+      markers[channelID].bindPopup(`
         <b>${sensorName}</b><br>
-        <select id="time-range-${channelID}" style="margin:5px 0; width:100%;">
-          <option value="1">1 Hour</option>
-          <option value="24">24 Hours</option>
-          <option value="168">7 Days</option>
-        </select>
-        <canvas id="chart-${channelID}" height="200"></canvas>
-      </div>
-   `;
-   markers[channelID].bindPopup(popupContent).openPopup();
-   loadChart(channelID, document.getElementById(`time-range-${channelID}`).value);
+        <b>Channel:</b> ${channelID}<br>
+        <b>Status:</b> <span style="color:${status.color}; font-weight:bold;">${status.text}</span><br>
+        <b>PM1:</b> ${pm1} µg/m³<br>
+        <b>PM2.5:</b> ${pm25} µg/m³<br>
+        <b>PM10:</b> ${pm10} µg/m³<br>
+        <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})<br><br>
+        <div style="width:100%;">
+          <select id="time-range-${channelID}">
+            <option value="1">1 Hour</option>
+            <option value="24">24 Hours</option>
+            <option value="168">7 Days</option>
+          </select>
+          <canvas id="chart-${channelID}" height="200"></canvas>
+        </div>
+      `);
 
-   document.getElementById(`time-range-${channelID}`).addEventListener('change', (e) => {
-      loadChart(channelID, e.target.value);
-   });
-}
-
-function loadChart(channelID, hours){
-   const results = Math.min(hours*4, 1000);
-   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
-     .then(res => res.json())
-     .then(history => {
-        const labels = history.feeds.map(f => new Date(f.created_at).toLocaleString());
-        const pm1Data  = history.feeds.map(f => parseFloat(f.field1)||0);
-        const pm25Data = history.feeds.map(f => parseFloat(f.field2)||0);
-        const pm10Data = history.feeds.map(f => parseFloat(f.field3)||0);
-        const ctx = document.getElementById(`chart-${channelID}`).getContext('2d');
-        if(window[`chart_${channelID}`]) window[`chart_${channelID}`].destroy();
-        window[`chart_${channelID}`] = new Chart(ctx, {
-          type:'line',
-          data:{ labels, datasets:[
-            {label:'PM1', data:pm1Data, borderColor:'#3498db', backgroundColor:'rgba(52,152,219,0.2)', tension:0.4, fill:true},
-            {label:'PM2.5', data:pm25Data, borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,0.2)', tension:0.4, fill:true},
-            {label:'PM10', data:pm10Data, borderColor:'#f1c40f', backgroundColor:'rgba(241,196,15,0.2)', tension:0.4, fill:true}
-          ]},
-          options:{
-            responsive:true,
-            plugins:{ legend:{ labels:{color:'white'} }},
-            scales:{
-              x:{ ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} },
-              y:{ beginAtZero:true, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} }
-            }
-          }
+      markers[channelID].on('popupopen', () => {
+        loadChart(channelID, document.getElementById(`time-range-${channelID}`).value);
+        document.getElementById(`time-range-${channelID}`).addEventListener('change', (e)=>{
+          loadChart(channelID, e.target.value);
         });
-     });
+      });
+    });
 }
 
+// Load Chart.js graph
+function loadChart(channelID, hours){
+  const results = Math.min(hours*4, 1000); // 15-min interval approx
+  fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
+    .then(res => res.json())
+    .then(history => {
+
+      const labels = history.feeds.map(f => new Date(f.created_at).toLocaleString());
+      const pm1Data  = history.feeds.map(f => parseFloat(f.field1) || 0);
+      const pm25Data = history.feeds.map(f => parseFloat(f.field2) || 0);
+      const pm10Data = history.feeds.map(f => parseFloat(f.field3) || 0);
+      const aqiData  = history.feeds.map(f => calculateAQI(parseFloat(f.field2)||0).aqi);
+
+      const ctx = document.getElementById(`chart-${channelID}`).getContext('2d');
+      if(window[`chart_${channelID}`]) window[`chart_${channelID}`].destroy();
+
+      window[`chart_${channelID}`] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets:[
+            { label:'PM1', data: pm1Data, borderColor:'#3498db', backgroundColor:'rgba(52,152,219,0.2)', tension:0.4, fill:true },
+            { label:'PM2.5', data: pm25Data, borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,0.2)', tension:0.4, fill:true },
+            { label:'PM10', data: pm10Data, borderColor:'#f1c40f', backgroundColor:'rgba(241,196,15,0.2)', tension:0.4, fill:true },
+            { label:'AQI', data: aqiData, borderColor:'#8e44ad', backgroundColor:'rgba(142,68,173,0.2)', tension:0.4, fill:false, yAxisID:'y1' }
+          ]
+        },
+        options: {
+          responsive:true,
+          interaction:{mode:'index', intersect:false},
+          stacked:false,
+          plugins:{ legend:{ labels:{color:'white'} } },
+          scales:{
+            x:{ ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} },
+            y:{ type:'linear', position:'left', beginAtZero:true, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} },
+            y1:{ type:'linear', position:'right', beginAtZero:true, ticks:{color:'white'}, grid:{drawOnChartArea:false} }
+          }
+        }
+      });
+
+    });
+}
+
+// Initial load
 channels.forEach(sensor => fetchData(sensor));
-setInterval(()=>channels.forEach(sensor => fetchData(sensor)),15000);
+setInterval(() => channels.forEach(sensor => fetchData(sensor)), 15000);
 </script>
 </body>
 </html>
