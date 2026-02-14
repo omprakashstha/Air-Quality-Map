@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Air Quality Platform</title>
+<title>Nova Scotia Air Quality Monitoring System</title>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- Leaflet -->
@@ -20,7 +20,7 @@
 </style>
 </head>
 <body>
-<div class="header">🌍 Smart Air Quality Monitoring Platform</div>
+<div class="header">🌍 Smart Sydney Air Quality Monitoring Platform</div>
 <div id="map"></div>
 
 <script>
@@ -84,19 +84,21 @@ function fetchData(sensor){
         markers[channelID].setStyle({fillColor:aqiData.color});
       }
 
-      // Popup with AQI-only graph
+      // Popup with big AQI-only graph
       markers[channelID].bindPopup(`
-        <b>${sensorName}</b><br>
-        <b>Channel:</b> ${channelID}<br>
-        <b>Status:</b> <span style="color:${status.color}">${status.text}</span><br>
-        <b>PM2.5:</b> ${pm25} µg/m³<br>
-        <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})<br><br>
-        <select id="time-range-${channelID}">
-          <option value="1">1 Hour</option>
-          <option value="24">24 Hours</option>
-          <option value="168">7 Days</option>
-        </select>
-        <canvas id="chart-${channelID}" height="300"></canvas>
+        <div style="width:500px;">
+          <b>${sensorName}</b><br>
+          <b>Channel:</b> ${channelID}<br>
+          <b>Status:</b> <span style="color:${status.color}">${status.text}</span><br>
+          <b>PM2.5:</b> ${pm25} µg/m³<br>
+          <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})<br><br>
+          <select id="time-range-${channelID}">
+            <option value="1">1 Hour</option>
+            <option value="24">24 Hours</option>
+            <option value="168">7 Days</option>
+          </select>
+          <canvas id="chart-${channelID}" width="480" height="300"></canvas>
+        </div>
       `);
 
       markers[channelID].on('popupopen', ()=>{
@@ -114,7 +116,7 @@ function loadAQIChart(channelID, hours){
   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
     .then(res => res.json())
     .then(history=>{
-      const labels = history.feeds.map(f=>new Date(f.created_at).toLocaleString());
+      const labels = history.feeds.map(f=>new Date(f.created_at).toLocaleTimeString());
       const aqiData = history.feeds.map(f=>calculateAQI(parseFloat(f.field2)||0).aqi);
 
       const ctx = document.getElementById(`chart-${channelID}`).getContext('2d');
@@ -130,15 +132,21 @@ function loadAQIChart(channelID, hours){
             borderColor:'#8e44ad',
             backgroundColor:'rgba(142,68,173,0.2)',
             fill:true,
-            tension:0.4
+            tension:0.3,
+            pointRadius:4,
+            pointBackgroundColor:'#fff',
+            pointBorderColor:'#8e44ad'
           }]
         },
         options:{
-          responsive:true,
-          plugins:{ legend:{ labels:{color:'white'} } },
+          responsive:false,
+          plugins:{
+            legend:{ labels:{color:'white'} },
+            tooltip:{mode:'index', intersect:false}
+          },
           scales:{
-            x:{ ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} },
-            y:{ ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} }
+            x:{ title:{display:true,text:'Time', color:'white'}, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} },
+            y:{ title:{display:true,text:'AQI', color:'white'}, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.2)'} }
           }
         }
       });
