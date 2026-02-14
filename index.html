@@ -45,8 +45,8 @@
 <div class="charts" id="chartsContainer"></div>
 <script>
 const channels = [
- "3244898",
- "CHANNEL_ID_2"
+  { id: "3244898", name: "Kings Road, Sydney AQI" },
+  { id: "CHANNEL_ID_2", name: "Pokhara AQ Station" }
 ];
 var map = L.map('map').setView([0,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -72,6 +72,8 @@ function getStatus(lastUpdate){
        : {text:"OFFLINE", color:"red"};
 }
 function fetchData(channelID){
+	const channelID = sensor.id;
+        const sensorName = sensor.name;
  fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=1`)
  .then(res => res.json())
  .then(data => {
@@ -114,10 +116,10 @@ function fetchData(channelID){
  });
 }
 // Initial load
-channels.forEach(id => fetchData(id));
+channels.forEach(sensor => fetchData(sensor));
 // Real-time polling every 15 sec
 setInterval(() => {
- channels.forEach(id => fetchData(id));
+ channels.forEach(sensor => fetchData(sensor));
 }, 15000);
 </script>
 </body>
