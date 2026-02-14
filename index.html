@@ -29,8 +29,8 @@
     border-radius:8px;
     box-shadow:0 2px 6px rgba(0,0,0,0.5);
   }
-  canvas { height:300px !important; }
-  select { background:#333; color:white; border:none; padding:5px; border-radius:4px; }
+  canvas { width:100%; height:250px !important; }
+  select { background:#333; color:white; border:none; padding:5px; border-radius:4px; margin-top:5px; }
 </style>
 </head>
 <body>
@@ -109,27 +109,32 @@ function fetchData(sensor){
         markers[channelID].setStyle({fillColor:aqiData.color});
       }
 
-      // Bind popup with full values and graph
-      markers[channelID].bindPopup(`
-        <b>${sensorName}</b><br>
-        <b>Channel:</b> ${channelID}<br>
-        <b>Status:</b> <span style="color:${status.color}; font-weight:bold;">${status.text}</span><br>
-        <b>PM1:</b> ${pm1} µg/m³<br>
-        <b>PM2.5:</b> ${pm25} µg/m³<br>
-        <b>PM10:</b> ${pm10} µg/m³<br>
-        <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})<br><br>
-        <div style="width:100%;">
+      // Bind popup with values and chart
+      const popupContent = `
+        <div style="width:350px;">
+          <b>${sensorName}</b><br>
+          <b>Channel:</b> ${channelID}<br>
+          <b>Status:</b> <span style="color:${status.color}; font-weight:bold;">${status.text}</span><br>
+          <b>PM1:</b> ${pm1} µg/m³<br>
+          <b>PM2.5:</b> ${pm25} µg/m³<br>
+          <b>PM10:</b> ${pm10} µg/m³<br>
+          <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})<br>
           <select id="time-range-${channelID}">
             <option value="1">1 Hour</option>
             <option value="24">24 Hours</option>
             <option value="168">7 Days</option>
           </select>
-          <canvas id="chart-${channelID}" height="200"></canvas>
+          <canvas id="chart-${channelID}" width="350" height="250"></canvas>
         </div>
-      `);
+      `;
 
-      markers[channelID].on('popupopen', () => {
-        loadChart(channelID, document.getElementById(`time-range-${channelID}`).value);
+      markers[channelID].bindPopup(popupContent);
+
+      markers[channelID].on('popupopen', ()=>{
+        setTimeout(()=>{
+          loadChart(channelID, document.getElementById(`time-range-${channelID}`).value);
+        }, 100); // tiny delay for proper rendering
+
         document.getElementById(`time-range-${channelID}`).addEventListener('change', (e)=>{
           loadChart(channelID, e.target.value);
         });
@@ -143,7 +148,6 @@ function loadChart(channelID, hours){
   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
     .then(res => res.json())
     .then(history => {
-
       const labels = history.feeds.map(f => new Date(f.created_at).toLocaleString());
       const pm1Data  = history.feeds.map(f => parseFloat(f.field1) || 0);
       const pm25Data = history.feeds.map(f => parseFloat(f.field2) || 0);
@@ -154,18 +158,19 @@ function loadChart(channelID, hours){
       if(window[`chart_${channelID}`]) window[`chart_${channelID}`].destroy();
 
       window[`chart_${channelID}`] = new Chart(ctx, {
-        type: 'line',
-        data: {
+        type:'line',
+        data:{
           labels: labels,
           datasets:[
-            { label:'PM1', data: pm1Data, borderColor:'#3498db', backgroundColor:'rgba(52,152,219,0.2)', tension:0.4, fill:true },
-            { label:'PM2.5', data: pm25Data, borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,0.2)', tension:0.4, fill:true },
-            { label:'PM10', data: pm10Data, borderColor:'#f1c40f', backgroundColor:'rgba(241,196,15,0.2)', tension:0.4, fill:true },
-            { label:'AQI', data: aqiData, borderColor:'#8e44ad', backgroundColor:'rgba(142,68,173,0.2)', tension:0.4, fill:false, yAxisID:'y1' }
+            { label:'PM1', data: pm1Data, borderColor:'#3498db', backgroundColor:'rgba(52,152,219,0.2)', fill:true, tension:0.4 },
+            { label:'PM2.5', data: pm25Data, borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,0.2)', fill:true, tension:0.4 },
+            { label:'PM10', data: pm10Data, borderColor:'#f1c40f', backgroundColor:'rgba(241,196,15,0.2)', fill:true, tension:0.4 },
+            { label:'AQI', data: aqiData, borderColor:'#8e44ad', backgroundColor:'rgba(142,68,173,0.2)', fill:false, tension:0.4, yAxisID:'y1' }
           ]
         },
-        options: {
+        options:{
           responsive:true,
+          maintainAspectRatio:false,
           interaction:{mode:'index', intersect:false},
           stacked:false,
           plugins:{ legend:{ labels:{color:'white'} } },
@@ -176,7 +181,6 @@ function loadChart(channelID, hours){
           }
         }
       });
-
     });
 }
 
