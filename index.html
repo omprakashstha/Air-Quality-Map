@@ -93,7 +93,7 @@ function calculateAQI(pm) {
 function getStatus(lastUpdate){
   const now = new Date();
   const updateTime = new Date(lastUpdate);
-  return ((now - updateTime)/60000 <=10) ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"};
+  return ((now - updateTime)/60000 <=10) ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"}; // consider offline if no update in last 10 minutes.
 }
 
 function fetchData(sensor){
@@ -167,7 +167,7 @@ function setupChart(channelID){
 }
 
 function loadChart(channelID, hours){
-  const results = Math.min(hours*12, 1000);
+  const results = Math.min(hours*12, 1000); // 12 readings per hour, max 1000 for Thingspeak API
   fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
     .then(res => res.json())
     .then(history => {
@@ -244,7 +244,7 @@ function loadChart(channelID, hours){
 }
 
 channels.forEach(sensor => fetchData(sensor));
-setInterval(() => channels.forEach(sensor => fetchData(sensor)), 15000);
+setInterval(() => channels.forEach(sensor => fetchData(sensor)), 30000); // refresh every 30 seconds
 </script>
 </body>
 </html>
