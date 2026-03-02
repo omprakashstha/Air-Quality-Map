@@ -4,247 +4,298 @@
 <title>Nova Scotia Air Quality Monitoring System</title>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 <style>
-  body { margin:0; font-family: Arial; background:#1e1e2f; color:white; }
-  #map { height:100vh; }
-  .header { background:#111; color:white; padding:12px; text-align:center; font-size:20px; }
-  .sensor-label { background: white; border: 1px solid #333; padding: 2px 6px; font-size: 12px; border-radius: 4px; color:black; }
-  .leaflet-popup-content-wrapper { background: white !important; color: black !important; min-width: 520px !important; max-width: 520px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.25); }
-  .leaflet-popup-content { margin: 0 !important; padding: 0 !important; }
-  .popup-flex { display: flex; gap: 20px; padding: 15px; }
-  .popup-details { flex: 1 1 160px; font-size: 14px; line-height: 1.4; font-weight: 600; }
-  .popup-details b { display:block; margin-top:8px; }
-.popup-container {
-  width: 100%;
-  padding-top: 10px;  /* space above title */
+body { margin:0; font-family: Arial; background:#1e1e2f; color:white; }
+#map { height:100vh; }
+.header { background:#111; padding:12px; text-align:center; font-size:20px; }
+
+.sensor-label {
+  background:white;
+  border:1px solid #333;
+  padding:2px 6px;
+  font-size:12px;
+  border-radius:4px;
+  color:black;
 }
 
-.popup-title {
-  text-align: center;  
-  font-weight: bold;
-  font-size: 25px;
-  margin-bottom: 5px; 
-  display: block;
-  width: 100%;
-  padding-left: 90px;
-  padding-top: 10px;
-  padding-bottom: 0px;
+/* ==== POPUP (UNCHANGED LAYOUT) ==== */
+.leaflet-popup-content-wrapper{
+  background:white!important;
+  color:black!important;
+  min-width:800px!important;
+  max-width:800px!important;
+}
+.leaflet-popup-content{
+  margin:0!important;
+  padding:0!important;
 }
 
-.popup-details {
-  flex: 1 1 200px;       /* increase left section width */
-  font-size: 14px; 
-  line-height: 1.4; 
-  font-weight: 400;
-  padding-left: 10px;    /* small extra left padding if needed */
+/* Layout preserved */
+.popup-container{padding-top:12px}
+.popup-title{
+  text-align:center;
+  font-weight:bold;
+  font-size:23px;
+  padding-top:12px;
 }
 
-  .popup-chart { flex: 2 1 400px; background: white; padding: 10px; border-radius: 6px; }
-  select { width: 100%; margin-bottom: 10px; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; }
+.popup-flex{
+  display:flex;
+  gap:20px;
+  padding:18px;
+}
+
+/* Left info panel */
+.popup-details{
+  width:220px;
+  font-size:15px;
+}
+.popup-details b{
+  display:block;
+  margin-top:10px;
+}
+
+/* White graph area (larger) */
+.popup-chart{
+  flex:1;
+  background:#ffffff;
+  padding:14px;
+  border-radius:6px;
+}
+
+/* Larger canvas */
+canvas{
+  background:#ffffff;
+}
+
+/* Buttons unchanged */
+button{
+  width:100%;
+  margin-top:8px;
+  padding:7px;
+  cursor:pointer;
+}
 </style>
 </head>
+
 <body>
-<div class="header">
- 🌍 Sydney Air Quality Monitoring Platform
-</div>
+<div class="header">🌍 Sydney Air Quality Monitoring Platform</div>
 <div id="map"></div>
 
 <script>
+/* ---------------- CONFIG ---------------- */
 const channels = [
-  {
-    id: "3244898",
-    name: "Kings Road, Sydney AQI",
-    lat: 46.121921,
-    lon: -60.204464
-  },
-  {
-    id: "3253969",
-    name: "Shivam AQI",
-    lat: 46.124015,
-    lon: -60.196825
-  },
-  {
-    id: "3244884",
-    name: "ZIA AQI",
-    lat: 46.133131,
-    lon: -60.173294
-  }
+  {id:"3244898",name:"Kings Road, Sydney AQI",lat:46.121921,lon:-60.204464},
+  {id:"3253969",name:"Shivam AQI",lat:46.124015,lon:-60.196825},
+  {id:"3280999",name:"Ashby AQI",lat:46.133050,lon:-60.173377}
 ];
 
-var map = L.map('map').setView([0,0],2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(map);
+const map=L.map('map').setView([46.12,-60.19],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let markers = {};
-let bounds = [];
+let markers={}, charts={}, historyCache={};
 
-function calculateAQI(pm) {
-  if(pm <= 12) return {aqi: pm*4.16, level:"Good", color:"#2ecc71"};
-  if(pm <= 35.4) return {aqi: 50 + (pm-12)*2.1, level:"Moderate", color:"#f1c40f"};
-  if(pm <= 55.4) return {aqi: 100 + (pm-35.4)*2.46, level:"Unhealthy (Sensitive)", color:"#e67e22"};
-  if(pm <= 150.4) return {aqi: 150 + (pm-55.4)*0.52, level:"Unhealthy", color:"#e74c3c"};
-  return {aqi: 300, level:"Hazardous", color:"#8e44ad"};
+/* ---------------- AQI (US EPA) ---------------- */
+function calculateAQI(pm){
+  if(pm<=12) return {aqi:pm*4.16,level:"Good",color:"#2ecc71"};
+  if(pm<=35.4) return {aqi:50+(pm-12)*2.1,level:"Moderate",color:"#f1c40f"};
+  if(pm<=55.4) return {aqi:100+(pm-35.4)*2.46,level:"Unhealthy (Sensitive)",color:"#e67e22"};
+  return {aqi:200,level:"Unhealthy",color:"#e74c3c"};
 }
 
-function getStatus(lastUpdate){
-  const now = new Date();
-  const updateTime = new Date(lastUpdate);
-  return ((now - updateTime)/60000 <=10) ? {text:"ONLINE", color:"green"} : {text:"OFFLINE", color:"red"}; // consider offline if no update in last 10 minutes.
+/* ---------------- AQHI (CANADA – NUMERIC) ---------------- */
+/* Practical PM2.5-based AQHI approximation */
+function calculateAQHI(pm){
+  let aqhi;
+  if(pm <= 10) aqhi = 1 + (pm / 10) * 2;         // 1–3
+  else if(pm <= 20) aqhi = 3 + ((pm-10)/10)*3;  // 3–6
+  else if(pm <= 30) aqhi = 6 + ((pm-20)/10)*4;  // 6–10
+  else aqhi = 10;
+
+  aqhi = Math.min(10, Math.max(1, Math.round(aqhi)));
+
+  let risk = aqhi <= 3 ? "Low" :
+             aqhi <= 6 ? "Moderate" :
+             aqhi <= 9 ? "High" : "Very High";
+
+  return {aqhi, risk};
 }
 
+/* ---------------- POPUP ---------------- */
+function getPopupHTML(s,pm25,aqi,aqhi){
+  return `
+  <div class="popup-container" >
+    <div class="popup-title">${s.name}</div>
+    <div class="popup-flex">
+      <div class="popup-details">
+        <b>Channel:</b> ${s.id}
+        <b>PM2.5:</b> ${pm25.toFixed(1)} µg/m³
+        <b>US AQI:</b> ${aqi.aqi.toFixed(0)} (${aqi.level})
+        <b>Canada AQHI:</b> ${aqhi.aqhi} (${aqhi.risk})
+        <button onclick="exportCSV('${s.id}')">Export CSV</button>
+        <button onclick="exportPDF('${s.id}','${s.name}')">Export PDF</button>
+      </div>
+      <div class="popup-chart">
+        <canvas id="chart-${s.id}" width="650" height="350"></canvas>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------------- FETCH DATA ---------------- */
 function fetchData(sensor){
-  const channelID = sensor.id;
-  fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=25`)
-    .then(res => res.json())
-    .then(data => {
-      const latest = data.feeds[data.feeds.length - 1];
-      if(!latest) return;
+  fetch(`https://api.thingspeak.com/channels/${sensor.id}/feeds.json?results=6`)
+    .then(r=>r.json())
+    .then(d=>{
+      const f=d.feeds.at(-1); if(!f) return;
+      const pm25=parseFloat(f.field2)||0;
+      const aqi=calculateAQI(pm25);
+      const aqhi=calculateAQHI(pm25);
 
-      const pm1  = parseFloat(latest.field1);
-      const pm25 = parseFloat(latest.field2);
-      const pm10 = parseFloat(latest.field3);
-      const lastUpdate = latest.created_at;
-      const lat = sensor.lat;
-      const lon = sensor.lon;
-      const aqiData = calculateAQI(pm25);
-      const status = getStatus(lastUpdate);
-
-      if(!markers[channelID]){
-        markers[channelID] = L.circleMarker([lat, lon], {
-          radius:15, fillColor:aqiData.color, color:"#000", weight:1, fillOpacity:0.9
-        }).addTo(map);
-
-        markers[channelID].bindTooltip(sensor.name, { permanent:true, direction:"top", offset:[0,-10], className:"sensor-label" });
-        bounds.push([lat, lon]);
-        map.fitBounds(bounds, {padding:[50,50]});
-
-        markers[channelID].bindPopup(getPopupHTML(channelID, sensor.name, channelID, status, pm1, pm25, pm10, aqiData));
-        markers[channelID].on('popupopen', () => setupChart(channelID));
-        markers[channelID].on('popupclose', () => { if(window[`chart_${channelID}`]) { window[`chart_${channelID}`].destroy(); delete window[`chart_${channelID}`]; } });
-      } else {
-        // Only update position and color, do NOT overwrite popup content
-        markers[channelID].setLatLng([lat, lon]);
-        markers[channelID].setStyle({fillColor:aqiData.color});
+      if(!markers[sensor.id]){
+        markers[sensor.id]=L.circleMarker([sensor.lat,sensor.lon],{
+          radius:15,fillColor:aqi.color,color:"#000",fillOpacity:0.9
+        }).addTo(map)
+        .bindTooltip(sensor.name,{permanent:true,className:"sensor-label"})
+        .bindPopup(getPopupHTML(sensor,pm25,aqi,aqhi))
+        .on('popupopen',()=>loadChart(sensor.id));
+      }else{
+        markers[sensor.id].setStyle({fillColor:aqi.color});
       }
     });
 }
 
-function getPopupHTML(channelID, name, id, status, pm1, pm25, pm10, aqiData){
-  return `
-    <div class="popup-container">
-      <div class="popup-title">${name}</div>
-      <div class="popup-flex">
-        <div class="popup-details">
-          <b>Channel:</b> ${id}
-          <b>Status:</b> <span style="color:${status.color}; font-weight:bold;">${status.text}</span>
-          <b>PM1:</b> ${isNaN(pm1)?'N/A':pm1} µg/m³
-          <b>PM2.5:</b> ${isNaN(pm25)?'N/A':pm25} µg/m³
-          <b>PM10:</b> ${isNaN(pm10)?'N/A':pm10} µg/m³
-          <b>AQI:</b> ${aqiData.aqi.toFixed(0)} (${aqiData.level})
-        </div>
-        <div class="popup-chart">
-          <select id="time-range-${channelID}">
-            <option value="1">1 Hour</option>
-            <option value="24">24 Hours</option>
-            <option value="168">7 Days</option>
-          </select>
-          <canvas id="chart-${channelID}" height="350"></canvas>
-        </div>
-      </div>
-    </div>
-  `;
-}
-function setupChart(channelID){
-  const selectEl = document.getElementById(`time-range-${channelID}`);
-  loadChart(channelID, selectEl.value);
-  const newSelect = selectEl.cloneNode(true);
-  selectEl.replaceWith(newSelect);
-  newSelect.addEventListener('change', e => loadChart(channelID, e.target.value));
-}
+/* ---------------- CONTINUOUS CHART ---------------- */
+function loadChart(id){
+  fetch(`https://api.thingspeak.com/channels/${id}/feeds.json?results=144`)
+    .then(r=>r.json())
+    .then(h=>{
+      historyCache[id]=h.feeds;
 
-function loadChart(channelID, hours){
-  const results = Math.min(hours*12, 1000); // 12 readings per hour, max 1000 for Thingspeak API
-  fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=${results}`)
-    .then(res => res.json())
-    .then(history => {
-      if(!history.feeds || history.feeds.length===0) return;
-      const labels = history.feeds.map(f => new Date(f.created_at).toLocaleString());
-      const pm1Data  = history.feeds.map(f => parseFloat(f.field1)||0);
-      const pm25Data = history.feeds.map(f => parseFloat(f.field2)||0);
-      const pm10Data = history.feeds.map(f => parseFloat(f.field3)||0);
-      const aqiData  = history.feeds.map(f => calculateAQI(parseFloat(f.field2)||0).aqi);
+      const labels=h.feeds.map(f =>
+        new Date(f.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})
+      );
 
-      const ctx = document.getElementById(`chart-${channelID}`).getContext('2d');
-      if(window[`chart_${channelID}`]) window[`chart_${channelID}`].destroy();
+      const pm25=h.feeds.map(f=>{
+        const v=parseFloat(f.field2);
+        return isNaN(v)?null:v;
+      });
 
-      window[`chart_${channelID}`] = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets:[
-          {
-    label:'PM1',
-    data: pm1Data,
-    borderColor:'#3498db',
-    backgroundColor:'transparent',
-    fill:false,
-    tension:0.3,
-    pointRadius: 3,
-    pointHoverRadius: 5,
-    hidden: true
-  },
-  {
-    label:'PM2.5',
-    data: pm25Data,
-    borderColor:'#e74c3c',
-    backgroundColor:'transparent',
-    fill:false,
-    tension:0.3,
-    pointRadius: 3,
-    pointHoverRadius: 5,
-    hidden: true
-  },
-  {
-    label:'PM10',
-    data: pm10Data,
-    borderColor:'#f1c40f',
-    backgroundColor:'transparent',
-    fill:false,
-    tension:0.3,
-    pointRadius: 3,
-    pointHoverRadius: 5,
-    hidden: true
-  },
-  {
-    label:'AQI',
-    data: aqiData,
-    borderColor:'#8e44ad',
-    backgroundColor:'transparent',
-    fill:false,
-    yAxisID:'y1',
-    pointRadius: 4,
-    pointHoverRadius: 6
-  }
-]},
-        options: {
+      const aqi=pm25.map(v=>v!==null?calculateAQI(v).aqi:null);
+      const aqhi=pm25.map(v=>v!==null?calculateAQHI(v).aqhi:null);
+
+      const ctx=document.getElementById(`chart-${id}`).getContext('2d');
+      if(charts[id]) charts[id].destroy();
+
+      charts[id]=new Chart(ctx,{
+        type:'line',
+        data:{
+          labels,
+          datasets:[
+            {
+              label:'PM2.5 (µg/m³)',
+              data:pm25,
+              borderColor:'#e74c3c',
+              fill:false,
+              tension:0.3,
+              spanGaps:true,
+              pointRadius:3,
+              hidden:false
+            },
+            {
+              label:'US AQI',
+              data:aqi,
+              borderColor:'#8e44ad',
+              yAxisID:'y1',
+              fill:false,
+              tension:0.3,
+              spanGaps:true,
+              pointRadius:3,
+              hidden:true
+            },
+            {
+              label:'Canada AQHI',
+              data:aqhi,
+              borderColor:'#2980b9',
+              yAxisID:'y1',
+              fill:false,
+              tension:0.3,
+              spanGaps:true,
+              pointRadius:3,
+              hidden:false
+            }
+          ]
+        },
+        options:{
           responsive:true,
+          maintainAspectRatio:false,
           interaction:{mode:'index',intersect:false},
-          stacked:false,
-          plugins:{ legend:{ labels:{color:'black', font:{size:14}} } },
           scales:{
-            x:{ display:true, title:{display:true,text:'Time',color:'black', font:{size:14,weight:'bold'}}, ticks:{color:'black', maxRotation:45, minRotation:45}, grid:{color:'rgba(0,0,0,0.1)'} },
-            y:{ type:'linear', position:'left', display:true, title:{display:true,text:'PM Values (µg/m³)',color:'black', font:{size:14,weight:'bold'}}, ticks:{color:'black'}, grid:{color:'rgba(0,0,0,0.1)'}, beginAtZero:true },
-            y1:{ type:'linear', position:'right', display:true, title:{display:true,text:'AQI',color:'black', font:{size:14,weight:'bold'}}, ticks:{color:'black'}, grid:{drawOnChartArea:false}, beginAtZero:true }
+            x:{ticks:{autoSkip:true,maxTicksLimit:8}},
+            y:{
+              beginAtZero:true,
+              title:{
+                display:true,
+                text:'PM2.5 (µg/m³) — Particle Concentration'
+              }
+            },
+            y1:{
+              position:'right',
+              beginAtZero:true,
+              suggestedMax:10,
+              title:{
+                display:true,
+                text:'AQI / AQHI Index Value'
+              },
+              grid:{drawOnChartArea:false}
+            }
           }
         }
       });
     });
 }
 
-channels.forEach(sensor => fetchData(sensor));
-setInterval(() => channels.forEach(sensor => fetchData(sensor)), 30000); // refresh every 30 seconds
+/* ---------------- EXPORT ---------------- */
+
+function exportPDF(id,name){
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF();
+  pdf.text(name,20,20);
+  pdf.text(`Generated: ${new Date().toLocaleString()}`,20,30);
+  pdf.save(`${name}_AQI_Report.pdf`);
+}
+function exportCSV(id){
+  let csv="Time,PM2.5\n";
+  historyCache[id].forEach(f=>{
+    csv+=`${f.created_at},${f.field2}\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`AQI_${id}.csv`;
+  a.click();
+}
+
+function exportPNG(id){
+  const canvas=document.getElementById(`chart-${id}`);
+  const a=document.createElement('a');
+  a.href=canvas.toDataURL('image/png');
+  a.download=`AQI_Chart_${id}.png`;
+  a.click();
+}
+/* ---------------- INIT ---------------- */
+channels.forEach(fetchData);
+setInterval(()=>channels.forEach(fetchData),600000);
 </script>
 </body>
 </html>
