@@ -29,63 +29,33 @@ body { margin:0; font-family: Arial; background:#1e1e2f; color:white; }
   color:black;
 }
 
-/* ==== POPUP (UNCHANGED LAYOUT) ==== */
 .leaflet-popup-content-wrapper{
   background:white!important;
   color:black!important;
   min-width:800px!important;
   max-width:800px!important;
 }
-.leaflet-popup-content{
-  margin:0!important;
-  padding:0!important;
-}
+.leaflet-popup-content{ margin:0!important; padding:0!important; }
 
-/* Layout preserved */
-.popup-container{padding-top:12px}
-.popup-title{
-  text-align:center;
-  font-weight:bold;
-  font-size:23px;
-  padding-top:12px;
-}
+.popup-container{ padding-top:12px }
+.popup-title{ text-align:center; font-weight:bold; font-size:23px; padding-top:12px; }
 
-.popup-flex{
-  display:flex;
-  gap:20px;
-  padding:18px;
-}
+.popup-flex{ display:flex; gap:20px; padding:18px; }
 
-/* Left info panel */
-.popup-details{
-  width:220px;
-  font-size:15px;
-}
-.popup-details b{
-  display:block;
-  margin-top:10px;
-}
+.popup-details{ width:220px; font-size:15px; }
+.popup-details b{ display:block; margin-top:10px; }
 
-/* White graph area (larger) */
-.popup-chart{
-  flex:1;
-  background:#ffffff;
-  padding:14px;
-  border-radius:6px;
-}
+.popup-chart{ flex:1; background:#fff; padding:14px; border-radius:6px; margin-left: 8px;}
 
-/* Larger canvas */
-canvas{
-  background:#ffffff;
-}
+canvas{ background:#fff; }
 
-/* Buttons unchanged */
-button{
+button, select{
   width:100%;
-  margin-top:8px;
+  margin-top:9px;
   padding:7px;
-  cursor:pointer;
 }
+.status-online{ color:green; font-weight:bold }
+.status-offline{ color:red; font-weight:bold }
 </style>
 </head>
 
@@ -95,204 +65,158 @@ button{
 
 <script>
 /* ---------------- CONFIG ---------------- */
-const channels = [
-  {id:"3244898",name:"Kings Road, Sydney AQI",lat:46.121921,lon:-60.204464},
-  {id:"3253969",name:"Shivam AQI",lat:46.124015,lon:-60.196825},
-  {id:"3280999",name:"Ashby AQI",lat:46.133050,lon:-60.173377}
+const channels=[
+ {id:"3244898",name:"Kings Road, Sydney AQI",lat:46.121921,lon:-60.204464},
+ {id:"3253969",name:"Shivam AQI",lat:46.124015,lon:-60.196825},
+ {id:"3280999",name:"Ashby AQI",lat:46.133050,lon:-60.173377}
 ];
 
 const map=L.map('map').setView([46.12,-60.19],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let markers={}, charts={}, historyCache={};
+let markers={}, charts={}, historyCache={}, metaCache={};
 
-/* ---------------- AQI (US EPA) ---------------- */
+/* ---------------- AQI ---------------- */
 function calculateAQI(pm){
-  if(pm<=12) return {aqi:pm*4.16,level:"Good",color:"#2ecc71"};
-  if(pm<=35.4) return {aqi:50+(pm-12)*2.1,level:"Moderate",color:"#f1c40f"};
-  if(pm<=55.4) return {aqi:100+(pm-35.4)*2.46,level:"Unhealthy (Sensitive)",color:"#e67e22"};
-  return {aqi:200,level:"Unhealthy",color:"#e74c3c"};
+ if(pm<=12) return {aqi:pm*4.16,level:"Good",color:"#2ecc71"};
+ if(pm<=35.4) return {aqi:50+(pm-12)*2.1,level:"Moderate",color:"#f1c40f"};
+ if(pm<=55.4) return {aqi:100+(pm-35.4)*2.46,level:"Unhealthy (Sensitive)",color:"#e67e22"};
+ return {aqi:200,level:"Unhealthy",color:"#e74c3c"};
 }
 
-/* ---------------- AQHI (CANADA – NUMERIC) ---------------- */
-/* Practical PM2.5-based AQHI approximation */
+/* ---------------- AQHI ---------------- */
 function calculateAQHI(pm){
-  let aqhi;
-  if(pm <= 10) aqhi = 1 + (pm / 10) * 2;         // 1–3
-  else if(pm <= 20) aqhi = 3 + ((pm-10)/10)*3;  // 3–6
-  else if(pm <= 30) aqhi = 6 + ((pm-20)/10)*4;  // 6–10
-  else aqhi = 10;
+ let v=pm<=10?1+(pm/10)*2:
+       pm<=20?3+((pm-10)/10)*3:
+       pm<=30?6+((pm-20)/10)*4:10;
+ v=Math.round(Math.min(10,Math.max(1,v)));
+ return {aqhi:v,risk:v<=3?"Low":v<=6?"Moderate":v<=9?"High":"Very High"};
+}
 
-  aqhi = Math.min(10, Math.max(1, Math.round(aqhi)));
-
-  let risk = aqhi <= 3 ? "Low" :
-             aqhi <= 6 ? "Moderate" :
-             aqhi <= 9 ? "High" : "Very High";
-
-  return {aqhi, risk};
+/* ---------------- STATUS ---------------- */
+function getStatus(ts){
+ const mins=(Date.now()-new Date(ts))/60000;
+ return mins<=15
+  ?{text:"ONLINE",cls:"status-online"}
+  :{text:"OFFLINE",cls:"status-offline"};
 }
 
 /* ---------------- POPUP ---------------- */
-function getPopupHTML(s,pm25,aqi,aqhi){
-  return `
-  <div class="popup-container" >
-    <div class="popup-title">${s.name}</div>
-    <div class="popup-flex">
-      <div class="popup-details">
-        <b>Channel:</b> ${s.id}
-        <b>PM2.5:</b> ${pm25.toFixed(1)} µg/m³
-        <b>US AQI:</b> ${aqi.aqi.toFixed(0)} (${aqi.level})
-        <b>Canada AQHI:</b> ${aqhi.aqhi} (${aqhi.risk})
-        <button onclick="exportCSV('${s.id}')">Export CSV</button>
-        <button onclick="exportPDF('${s.id}','${s.name}')">Export PDF</button>
-      </div>
-      <div class="popup-chart">
-        <canvas id="chart-${s.id}" width="650" height="350"></canvas>
-      </div>
-    </div>
-  </div>`;
+function getPopupHTML(s,pm25,aqi,aqhi,status){
+ metaCache[s.id]={s,pm25,aqi,aqhi,status};
+
+ return `
+ <div class="popup-container">
+  <div class="popup-title">${s.name}</div>
+  <div class="popup-flex">
+   <div class="popup-details">
+    <b>Status:</b> <span class="${status.cls}">${status.text}</span>
+    <b>Channel:</b> ${s.id}
+    <b>PM2.5:</b> ${pm25.toFixed(1)} µg/m³
+    <b>US AQI:</b> ${aqi.aqi.toFixed(0)} (${aqi.level})
+    <b>Canada AQHI:</b> ${aqhi.aqhi} (${aqhi.risk})
+
+    <select onchange="loadChart('${s.id}',this.value)">
+      <option value="1">1 Hour</option>
+      <option value="12">12 Hours</option>
+      <option value="24" selected>24 Hours</option>
+      <option value="72">3 Days</option>
+      <option value="168">7 Days</option>
+    </select>
+
+    <button onclick="exportCSV('${s.id}')">Export CSV</button>
+    <button onclick="exportPDF('${s.id}')">Export PDF</button>
+   </div>
+
+   <div class="popup-chart">
+    <canvas id="chart-${s.id}" width="650" height="350"></canvas>
+   </div>
+  </div>
+ </div>`;
 }
 
-/* ---------------- FETCH DATA ---------------- */
+/* ---------------- FETCH ---------------- */
 function fetchData(sensor){
-  fetch(`https://api.thingspeak.com/channels/${sensor.id}/feeds.json?results=6`)
-    .then(r=>r.json())
-    .then(d=>{
-      const f=d.feeds.at(-1); if(!f) return;
-      const pm25=parseFloat(f.field2)||0;
-      const aqi=calculateAQI(pm25);
-      const aqhi=calculateAQHI(pm25);
+ fetch(`https://api.thingspeak.com/channels/${sensor.id}/feeds.json?results=1`)
+ .then(r=>r.json()).then(d=>{
+  const f=d.feeds[0]; if(!f) return;
 
-      if(!markers[sensor.id]){
-        markers[sensor.id]=L.circleMarker([sensor.lat,sensor.lon],{
-          radius:15,fillColor:aqi.color,color:"#000",fillOpacity:0.9
-        }).addTo(map)
-        .bindTooltip(sensor.name,{permanent:true,className:"sensor-label"})
-        .bindPopup(getPopupHTML(sensor,pm25,aqi,aqhi))
-        .on('popupopen',()=>loadChart(sensor.id));
-      }else{
-        markers[sensor.id].setStyle({fillColor:aqi.color});
-      }
-    });
+  const pm25=parseFloat(f.field2)||0;
+  const aqi=calculateAQI(pm25);
+  const aqhi=calculateAQHI(pm25);
+  const status=getStatus(f.created_at);
+
+  if(!markers[sensor.id]){
+    markers[sensor.id]=L.circleMarker([sensor.lat,sensor.lon],{
+      radius:15,fillColor:aqi.color,color:"#000",fillOpacity:0.9
+    }).addTo(map)
+     .bindTooltip(sensor.name,{permanent:true,className:"sensor-label"})
+     .bindPopup(getPopupHTML(sensor,pm25,aqi,aqhi,status))
+     .on('popupopen',()=>loadChart(sensor.id,24));
+  }else{
+    markers[sensor.id].setStyle({fillColor:aqi.color});
+  }
+ });
 }
 
-/* ---------------- CONTINUOUS CHART ---------------- */
-function loadChart(id){
-  fetch(`https://api.thingspeak.com/channels/${id}/feeds.json?results=144`)
-    .then(r=>r.json())
-    .then(h=>{
-      historyCache[id]=h.feeds;
+/* ---------------- CHART ---------------- */
+function loadChart(id,hours){
+ const points=Math.min(hours*6,1000);
+ fetch(`https://api.thingspeak.com/channels/${id}/feeds.json?results=${points}`)
+ .then(r=>r.json()).then(h=>{
+  historyCache[id]=h.feeds;
 
-      const labels=h.feeds.map(f =>
-        new Date(f.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})
-      );
+  const labels=h.feeds.map(f=>
+    new Date(f.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})
+  );
 
-      const pm25=h.feeds.map(f=>{
-        const v=parseFloat(f.field2);
-        return isNaN(v)?null:v;
-      });
+  const pm25=h.feeds.map(f=>{
+    const v=parseFloat(f.field2);
+    return isNaN(v)?null:v;
+  });
 
-      const aqi=pm25.map(v=>v!==null?calculateAQI(v).aqi:null);
-      const aqhi=pm25.map(v=>v!==null?calculateAQHI(v).aqhi:null);
+  if(charts[id]) charts[id].destroy();
 
-      const ctx=document.getElementById(`chart-${id}`).getContext('2d');
-      if(charts[id]) charts[id].destroy();
-
-      charts[id]=new Chart(ctx,{
-        type:'line',
-        data:{
-          labels,
-          datasets:[
-            {
-              label:'PM2.5 (µg/m³)',
-              data:pm25,
-              borderColor:'#e74c3c',
-              fill:false,
-              tension:0.3,
-              spanGaps:true,
-              pointRadius:3,
-              hidden:false
-            },
-            {
-              label:'US AQI',
-              data:aqi,
-              borderColor:'#8e44ad',
-              yAxisID:'y1',
-              fill:false,
-              tension:0.3,
-              spanGaps:true,
-              pointRadius:3,
-              hidden:true
-            },
-            {
-              label:'Canada AQHI',
-              data:aqhi,
-              borderColor:'#2980b9',
-              yAxisID:'y1',
-              fill:false,
-              tension:0.3,
-              spanGaps:true,
-              pointRadius:3,
-              hidden:false
-            }
-          ]
-        },
-        options:{
-          responsive:true,
-          maintainAspectRatio:false,
-          interaction:{mode:'index',intersect:false},
-          scales:{
-            x:{ticks:{autoSkip:true,maxTicksLimit:8}},
-            y:{
-              beginAtZero:true,
-              title:{
-                display:true,
-                text:'PM2.5 (µg/m³) — Particle Concentration'
-              }
-            },
-            y1:{
-              position:'right',
-              beginAtZero:true,
-              suggestedMax:10,
-              title:{
-                display:true,
-                text:'AQI / AQHI Index Value'
-              },
-              grid:{drawOnChartArea:false}
-            }
-          }
-        }
-      });
-    });
+  charts[id]=new Chart(document.getElementById(`chart-${id}`),{
+    type:'line',
+    data:{labels,datasets:[{
+      label:'PM2.5 (µg/m³)',
+      data:pm25,
+      borderColor:'#e74c3c',
+      tension:0.3,
+      spanGaps:true,
+      pointRadius:3
+    }]},
+    options:{responsive:true,maintainAspectRatio:false}
+  });
+ });
 }
 
 /* ---------------- EXPORT ---------------- */
-
-function exportPDF(id,name){
-  const {jsPDF}=window.jspdf;
-  const pdf=new jsPDF();
-  pdf.text(name,20,20);
-  pdf.text(`Generated: ${new Date().toLocaleString()}`,20,30);
-  pdf.save(`${name}_AQI_Report.pdf`);
-}
 function exportCSV(id){
-  let csv="Time,PM2.5\n";
-  historyCache[id].forEach(f=>{
-    csv+=`${f.created_at},${f.field2}\n`;
-  });
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download=`AQI_${id}.csv`;
-  a.click();
+ let csv="Time,PM2.5\n";
+ historyCache[id].forEach(f=>csv+=`${f.created_at},${f.field2}\n`);
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+ a.download=`AQI_${id}.csv`;
+ a.click();
 }
 
-function exportPNG(id){
-  const canvas=document.getElementById(`chart-${id}`);
-  const a=document.createElement('a');
-  a.href=canvas.toDataURL('image/png');
-  a.download=`AQI_Chart_${id}.png`;
-  a.click();
+function exportPDF(id){
+ const {jsPDF}=window.jspdf;
+ const pdf=new jsPDF();
+ const m=metaCache[id];
+ const img=document.getElementById(`chart-${id}`).toDataURL();
+
+ pdf.text(m.s.name,15,15);
+ pdf.text(`Status: ${m.status.text}`,15,25);
+ pdf.text(`PM2.5: ${m.pm25.toFixed(1)} µg/m³`,15,32);
+ pdf.text(`US AQI: ${m.aqi.aqi.toFixed(0)} (${m.aqi.level})`,15,39);
+ pdf.text(`Canada AQHI: ${m.aqhi.aqhi} (${m.aqhi.risk})`,15,46);
+ pdf.addImage(img,'PNG',15,55,180,90);
+ pdf.save(`${m.s.name}_AQ_Report.pdf`);
 }
+
 /* ---------------- INIT ---------------- */
 channels.forEach(fetchData);
 setInterval(()=>channels.forEach(fetchData),600000);
